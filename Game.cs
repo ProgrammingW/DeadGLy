@@ -6,42 +6,50 @@ using System;
 
 class Game : GameWindow
 {
-    private int _vertexBufferObject;
-    private int _vertexArrayObject;
+    private int _vao;
+    private int _vbo;
     private int _shaderProgram;
+    private int _uniformModel;
+    private int _uniformProjection;
+    private float _rotation;
 
-    public Game(GameWindowSettings gameWindowSettings, NativeWindowSettings nativeWindowSettings)
-        : base(gameWindowSettings, nativeWindowSettings) { }
+    public Game(GameWindowSettings gameSettings, NativeWindowSettings nativeSettings)
+        : base(gameSettings, nativeSettings) { }
 
     protected override void OnLoad()
     {
         base.OnLoad();
-        Console.WriteLine("🚀 Game loading...");
+
+        GL.ClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+        GL.Enable(EnableCap.DepthTest);
 
         float[] vertices = {
-            0.0f,  0.5f, 0.0f, // Top
-           -0.5f, -0.5f, 0.0f, // Left
-            0.5f, -0.5f, 0.0f  // Right
+             0.0f,  0.5f, 0.0f,
+            -0.5f, -0.5f, 0.0f,
+             0.5f, -0.5f, 0.0f
         };
 
-        _vertexBufferObject = GL.GenBuffer();
-        GL.BindBuffer(BufferTarget.ArrayBuffer, _vertexBufferObject);
+        _vao = GL.GenVertexArray();
+        _vbo = GL.GenBuffer();
+
+        GL.BindVertexArray(_vao);
+        GL.BindBuffer(BufferTarget.ArrayBuffer, _vbo);
         GL.BufferData(BufferTarget.ArrayBuffer, vertices.Length * sizeof(float), vertices, BufferUsageHint.StaticDraw);
 
-        _vertexArrayObject = GL.GenVertexArray();
-        GL.BindVertexArray(_vertexArrayObject);
         GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 3 * sizeof(float), 0);
         GL.EnableVertexAttribArray(0);
 
-        string vertexShaderSource = @"
+        string vertexShaderSrc = @"
         #version 330 core
         layout(location = 0) in vec3 aPosition;
+        uniform mat4 uModel;
+        uniform mat4 uProjection;
         void main()
         {
-            gl_Position = vec4(aPosition, 1.0);
+            gl_Position = uProjection * uModel * vec4(aPosition, 1.0);
         }";
 
-        string fragmentShaderSource = @"
+        string fragmentShaderSrc = @"
         #version 330 core
         out vec4 FragColor;
         void main()
@@ -50,14 +58,14 @@ class Game : GameWindow
         }";
 
         int vertexShader = GL.CreateShader(ShaderType.VertexShader);
-        GL.ShaderSource(vertexShader, vertexShaderSource);
+        GL.ShaderSource(vertexShader, vertexShaderSrc);
         GL.CompileShader(vertexShader);
-        CheckShaderCompile(vertexShader, "VERTEX");
+        CheckShader(vertexShader, "VERTEX");
 
         int fragmentShader = GL.CreateShader(ShaderType.FragmentShader);
-        GL.ShaderSource(fragmentShader, fragmentShaderSource);
+        GL.ShaderSource(fragmentShader, fragmentShaderSrc);
         GL.CompileShader(fragmentShader);
-        CheckShaderCompile(fragmentShader, "FRAGMENT");
+        CheckShader(fragmentShader, "FRAGMENT");
 
         _shaderProgram = GL.CreateProgram();
         GL.AttachShader(_shaderProgram, vertexShader);
@@ -67,39 +75,50 @@ class Game : GameWindow
         GL.DeleteShader(vertexShader);
         GL.DeleteShader(fragmentShader);
 
-        GL.ClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+        _uniformModel = GL.GetUniformLocation(_shaderProgram, "uModel");
+        _uniformProjection = GL.GetUniformLocation(_shaderProgram, "uProjection");
 
-        Console.WriteLine("✅ Game loaded!");
+        if (_uniformModel == -1 || _uniformProjection == -1)
+            Console.WriteLine("❌ Uniform location error.");
     }
 
     protected override void OnRenderFrame(FrameEventArgs args)
     {
         base.OnRenderFrame(args);
 
+        _rotation += 1f * (float)args.Time;
+
+        Matrix4 model = Matrix4.CreateRotationZ(_rotation);
+        Matrix4 projection = Matrix4.CreateOrthographicOffCenter(-1, 1, -1, 1, -1, 1);
+
         GL.Clear(ClearBufferMask.ColorBufferBit);
         GL.UseProgram(_shaderProgram);
-        GL.BindVertexArray(_vertexArrayObject);
+
+        GL.UniformMatrix4(_uniformModel, false, ref model);
+        GL.UniformMatrix4(_uniformProjection, false, ref projection);
+
+        GL.BindVertexArray(_vao);
         GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
 
         SwapBuffers();
     }
 
-    private void CheckShaderCompile(int shader, string type)
+    private void CheckShader(int shader, string type)
     {
         GL.GetShader(shader, ShaderParameter.CompileStatus, out int success);
         if (success == 0)
         {
-            string infoLog = GL.GetShaderInfoLog(shader);
-            Console.WriteLine($"❌ Error compiling {type} shader:\n{infoLog}");
-            throw new Exception(infoLog);
+            string log = GL.GetShaderInfoLog(shader);
+            Console.WriteLine($"❌ Error compiling {type} shader:\n{log}");
+            throw new Exception(log);
         }
     }
 
     protected override void OnUnload()
     {
         base.OnUnload();
-        GL.DeleteBuffer(_vertexBufferObject);
-        GL.DeleteVertexArray(_vertexArrayObject);
+        GL.DeleteBuffer(_vbo);
+        GL.DeleteVertexArray(_vao);
         GL.DeleteProgram(_shaderProgram);
     }
 }
